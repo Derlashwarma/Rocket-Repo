@@ -88,7 +88,8 @@ void setup() {
 }
 
 void loop() {
-  checkApogee();
+  // For the avionics
+  // checkApogee();
 
   // Read MS5611 component
   MS5611.read();
@@ -205,6 +206,7 @@ void readGPSData() {
 }
 
 // Apogee Detection Function
+// For the avionics/ flight computer
 void checkApogee() {
     if (altitude >= 800) {
         if (altitude > maxAltitude) {
