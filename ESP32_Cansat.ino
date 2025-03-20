@@ -4,7 +4,11 @@
 #include <TinyGPSPlus.h>
 #include <HardwareSerial.h>
 #include <SD.h>
+#include <DHT.h>
 
+
+
+// ------------------------------------------- PRIMARY MISSION SETUP FOUND HERE --------------------------------------------------------------------
 // GPS Setup
 #define RXD2 17
 #define TXD2 16
@@ -26,10 +30,6 @@ MS5611 MS5611(0x77);
 double latitude, longitude, altitude;
 int date, day, year, hour, minute, second;
 
-// MQ135
-#define PIN_MQ135 34
-MQ135 mq135_sensor(PIN_MQ135);
-
 // SD Card module
 #define SD_CS 5
 File data_file;
@@ -37,19 +37,38 @@ File data_file;
 // Transmitter/ Sender
 #define HC12_BAUD 9600    // HC-12 communication speed
 
+
+// ------------------------------------------- SECONDARY MISSION SETUP FOUND HERE --------------------------------------------------------------------
+// MQ135
+#define PIN_MQ135 34
+MQ135 mq135_sensor(PIN_MQ135);
+
+//DHT12
+#define DHTPIN 4
+#define DHTTYPE DHT12
+DHT dht(DHTPIN, DHTTYPE);
+
 // Apogee Calculation Variables
 bool apogee = false;
 float maxAltitude = 0;
 unsigned long fallStartTime = 0;
 bool falling = false;
 
+
+// --------------------------------------------------------- CANSAT SETUP IS HERE --------------------------------------------------------------------------------
 void setup() {
   // Transmitter Initialization
   // Serial2.begin(HC12_BAUD, SERIAL_8N1, 3, 1);
 
+    // GREEN
     pinMode(25, OUTPUT);
+    
+    // YELLOW
     pinMode(26, OUTPUT);
+    
+    // RED
     pinMode(27, OUTPUT);
+    
     //Buzzer
     pinMode(14, OUTPUT);
 
@@ -66,7 +85,8 @@ void setup() {
     Serial.print(".");
     delay(2000);
   }
-  digitalWrite(25,HIGH);
+  digitalWrite(26,HIGH);
+  digitalWrite(27,LOW);
 
   // MS5611 Initialization
   while (!Serial);
@@ -83,44 +103,53 @@ void setup() {
     delay(2000);
   }; 
   Serial.println("SD Card initialized successfully.");
-  digitalWrite(26,HIGH);
-  digitalWrite(27,LOW);
+  
+  digitalWrite(26,LOW);
+  dht.begin();
+  digitalWrite(25,HIGH);
+  
+  buzz();
 }
 
-void loop() {
-  // For the avionics
-  // checkApogee();
 
+// --------------------------------------------------------- CANSAT LOOP IS HERE --------------------------------------------------------------------------------
+
+void loop() {
+  
+  // --------------------------------------------------------- PRIMARY MISSIONS ARE FOUND HERE --------------------------------------------------------------------------------
   // Read MS5611 component
   MS5611.read();
   float realPressure = readPressure();
-  float realTemperature = readTemperature();
-  // float thermistorTemperature = getThermistorTemp();
+  float MS5611Temperature = readTemperature();
+  float thermistorTemp = getThermistorTemp();
 
-  // Read MQ135 component
-  float mq135_data = mq135_sensor.getPPM(); 
-  String air_quality = classifyAirQuality(mq135_data);
-
-  String ms5611Data = "P: " + String(realPressure) + "\t" + "T(MS5611): " + String(realTemperature);
-  String secondary_mission = ms5611Data + "\t AQ Value: " + String(mq135_data) + "\t AQ: " + air_quality;
   // Get GPS Data
   readGPSData();
-  // String CansatGPS = "Latitude: " + String(latitude, 6) + "\t"+ "Longitude: " + String(longitude, 6) + "\t Altitude: " + String(altitude) + "\t"  + String(date) + " " + String(day) + " " + String(year); 
-  String primaryMission = String(realPressure) + " | " + String(altitude) + " | " + String(realTemperature) + " | " + String(getThermistorTemp()) + " | " + String(latitude) + " | " + String(longitude) + " | " + String(getSDCardStatus()) + " | " + String(hour) + ":" + String(minute) + ":" + String(second);
+  //                       PRESSURE                           ALTITUDE                    TEMPERATURE (MS5611)                TEMPERATURE (THERMISTOR)      LATITUDE                      LONGITUDE                       SDCARD STATUS                    HOUR                 MINUTE                SECOND               
+  String primaryMission = String(realPressure) + " | " + String(altitude) + " | " + String(MS5611Temperature,2) + " | " + String(thermistorTemp,2) + " | " + String(latitude) + " | " + String(longitude) + " | " + String(getSDCardStatus()) + " | " + String(hour) + ":" + String(minute) + ":" + String(second);
   Serial.println(primaryMission); 
+
+ 
+  // --------------------------------------------------------- SECONDARY MISSIONS ARE FOUND HERE --------------------------------------------------------------------------------
+
+  //DHT12 MISSION
+  float DHTHumidity = dht.readHumidity();
+  
+  // Read MQ135 component
+  float mq135_data =  analogRead(PIN_MQ135);
+  String air_quality = classifyAirQuality(mq135_data);
+
+  String secondary_mission = String(DHTHumidity,2) + " | " + String(mq135_data) + " | " + air_quality;
+
   Serial.println(secondary_mission);  
   writeData(primaryMission,secondary_mission);
-  Serial2.println(primaryMission);
-  Serial2.println(secondary_mission);
-  buzz();
+  
   delay(300);
 }
 
 // Buzz
 void buzz(){
     digitalWrite(14, HIGH);
-    delay(200);
-    digitalWrite(14, LOW);
 }
 
 // SD Card Module Functions
@@ -158,21 +187,21 @@ bool getSDCardStatus() {
     return steinhart;
   }
 
-// Get MQ135 Data
-float ppmData(float temperature,float humidity){
-  return mq135_sensor.getCorrectedPPM(temperature, humidity);
-}
-
 String classifyAirQuality(float ppm) {
-  if (ppm <= 300) {
-    return "Good Quality";
-  } else if (ppm > 300 && ppm <= 1000) {
-    return "Moderate Quality";
-  } else {
-    return "Bad Quality";
-  }
+    if (ppm <= 100) {
+        return "Excellent";
+    } else if (ppm <= 200) {
+        return "Good";
+    } else if (ppm <= 300) {
+        return "Moderate";
+    } else if (ppm <= 500) {
+        return "Poor";
+    } else if (ppm <= 1000) {
+        return "Unhealthy";
+    } else {
+        return "Hazardous";
+    }
 }
-
 
 // Read pressure from MS5611
 float readPressure() {
@@ -204,24 +233,3 @@ void readGPSData() {
     }
   }
 }
-
-// Apogee Detection Function
-// For the avionics/ flight computer
-void checkApogee() {
-    if (altitude >= 800) {
-        if (altitude > maxAltitude) {
-            maxAltitude = altitude;
-            falling = false;
-            fallStartTime = 0;
-        } else {
-            if (!falling) {
-                falling = true;
-                fallStartTime = millis();
-            } else if (millis() - fallStartTime >= 3000) {
-                apogee = true;
-            }
-        }
-    }
-}
-
-// Detatch Method goes here
