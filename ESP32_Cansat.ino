@@ -77,34 +77,55 @@ void setup() {
   digitalWrite(27,HIGH);
   // GPS Initialization
   gpsSerial.begin(GPS_BAUD, SERIAL_8N1, RXD2, TXD2);
-  Serial.println("Waiting for GPS signal...");
   while (!gps.location.isValid()) {
     while (gpsSerial.available() > 0) {
       gps.encode(gpsSerial.read());
     }
-    Serial.print(".");
-    delay(2000);
+
+    digitalWrite(27,HIGH);
+    delay(200);
+    digitalWrite(27,LOW);
+    delay(200);
   }
+  
+  delay(2000);
   digitalWrite(26,HIGH);
+  
+  delay(2000);
+
   digitalWrite(27,LOW);
 
-  // MS5611 Initialization
-  while (!Serial);
-  Wire.begin();
+// MS5611 Initialization
+while (!Serial);  // Wait for Serial Monitor to open
 
-  while(!MS5611.begin()){
-    Serial.println("MS5611 initialization failed!");
-    delay(2000);
-  }
+delay(2000);
+
+Wire.begin();
+
+delay(2000);
+
+while (!MS5611.begin()) {
+
+    for (int i = 0; i < 10; i++) {
+        digitalWrite(26, HIGH);
+        delay(200);
+        digitalWrite(26, LOW);
+        delay(200);
+    }
+
+    delay(1000);
+}
+digitalWrite(26, LOW);
 
   // Initialize SD Card Module
   while (!SD.begin(SD_CS)){
-    Serial.println("SD Card initialization failed!");
-    delay(2000);
+    
+      digitalWrite(25, HIGH);
+      delay(1000);
+      digitalWrite(25, LOW);
+      delay(1000);
   }; 
-  Serial.println("SD Card initialized successfully.");
   
-  digitalWrite(26,LOW);
   dht.begin();
   digitalWrite(25,HIGH);
   
